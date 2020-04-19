@@ -1,9 +1,13 @@
 [package]
-name = "tiny_rss"
+name = "azfeed"
 version = "0.1.0"
-authors = ["Mordecai Malignatus <az4reus@gmail.com>"]
+authors = ["Mordecai Malignatus <mordecai@malignat.su>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+rss = "1.9.0"
+web-view = "0.6.2"
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.4.2"
+quick-xml = "0.18.1"

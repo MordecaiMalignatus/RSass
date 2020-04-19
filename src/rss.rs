@@ -79,5 +79,5 @@ pub fn import_opml(path: &Path) -> Result<(), Box<dyn Error>> {
         buf.clear()
     }
 
-    utils::write_feeds(&entries)
+    utils::write_feeds(entries)
 }

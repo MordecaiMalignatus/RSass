@@ -1,14 +1,11 @@
+use crate::utils;
 use quick_xml;
 use quick_xml::events::Event;
-use rss::Channel;
+use rss::{Channel, ChannelBuilder};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::fs;
-use std::io;
-use std::iter::FromIterator;
-use std::path::Path;
 use std::error::Error;
-use crate::utils;
+use std::fs;
+use std::path::Path;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Entry {
@@ -17,8 +14,22 @@ pub struct Entry {
     pub xml_url: String,
 }
 
-fn load_feeds() -> Vec<Channel> {
-    unimplemented!()
+// TODO: This'll need parallelisation. Sequential is unbearably slow. Perhaps
+// even caching.
+pub fn load_feeds(feeds: &Vec<Entry>) -> Vec<Channel> {
+    feeds
+        .iter()
+        .map(|a| match Channel::from_url(&a.xml_url) {
+            Ok(mut c) => {
+                c.set_link(&a.html_url);
+                c.set_title(&a.title);
+                Some(c)
+            }
+            Err(_) => None,
+        })
+        .filter(|c| c.is_some())
+        .map(|c| c.unwrap())
+        .collect()
 }
 
 pub fn get_unread_entries() -> Vec<Entry> {
@@ -41,7 +52,8 @@ pub fn import_opml(path: &Path) -> Result<(), Box<dyn Error>> {
             // The contents are in empty tags, the `Start` tags are categories.
             Ok(Event::Empty(e)) => match e.name() {
                 // Potential issue: The thing we really care about here is
-                // type="rss", which we currently don't check for.
+                // type="rss", which we currently don't check for. We just
+                // assume that any empty tag has the contents we want from it.
                 b"outline" => {
                     let current_entry = e
                         .attributes()
@@ -67,6 +79,7 @@ pub fn import_opml(path: &Path) -> Result<(), Box<dyn Error>> {
                             _ => continue,
                         }
                     }
+
                     entries.push(entry);
                 }
                 _ => continue,

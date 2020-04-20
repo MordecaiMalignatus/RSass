@@ -9,9 +9,8 @@ use std::path::PathBuf;
 /// entry, rather than `[[]]`.
 #[derive(Debug, Serialize, Deserialize)]
 struct Feeds {
-        feed: Vec<Entry>,
+    feed: Vec<Entry>,
 }
-
 
 fn feedfile() -> PathBuf {
     let home = env::var("HOME").expect("$HOME isn't set. Wot?");
@@ -20,13 +19,17 @@ fn feedfile() -> PathBuf {
 
 pub fn read_feeds() -> Vec<Entry> {
     match fs::read_to_string(feedfile()) {
-        Ok(x) => toml::from_str::<Feeds>(&x).expect("Can't parse feed file").feed,
+        Ok(x) => {
+            toml::from_str::<Feeds>(&x)
+                .expect("Can't parse feed file")
+                .feed
+        }
         Err(_e) => panic!("Implement behaviour to create feed file and launch default here"),
     }
 }
 
 pub fn write_feeds(feeds: Vec<Entry>) -> Result<(), Box<dyn Error>> {
-    let str = toml::to_string_pretty(&Feeds{feed: feeds})?;
+    let str = toml::to_string_pretty(&Feeds { feed: feeds })?;
     fs::write(feedfile(), str)?;
 
     Ok(())

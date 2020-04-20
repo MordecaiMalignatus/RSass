@@ -5,9 +5,12 @@ authors = ["Mordecai Malignatus <mordecai@malignat.su>"]
 edition = "2018"
 
 [dependencies]
-rss = { version = "1.9.0", features = ["from_url"] }
+rss = "1.9.0"
 web-view = "0.6.2"
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.4.2"
 quick-xml = "0.18.1"
+reqwest = "0.10.4"
+futures = "0.3"
+tokio = "0.2"

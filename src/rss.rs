@@ -1,11 +1,14 @@
 use crate::utils;
 use quick_xml;
+use reqwest::Client;
 use quick_xml::events::Event;
-use rss::{Channel, ChannelBuilder};
+use rss::Channel;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs;
 use std::path::Path;
+use futures::future::join_all;
+use tokio;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Entry {
@@ -14,22 +17,31 @@ pub struct Entry {
     pub xml_url: String,
 }
 
-// TODO: This'll need parallelisation. Sequential is unbearably slow. Perhaps
-// even caching.
 pub fn load_feeds(feeds: &Vec<Entry>) -> Vec<Channel> {
-    feeds
-        .iter()
-        .map(|a| match Channel::from_url(&a.xml_url) {
-            Ok(mut c) => {
-                c.set_link(&a.html_url);
-                c.set_title(&a.title);
-                Some(c)
-            }
-            Err(_) => None,
+    let mut runtime = tokio::runtime::Runtime::new().unwrap();
+    let feeds = runtime.block_on(async { read_channels(feeds).await });
+    feeds.into_iter()
+        .map(|a| a.map_err(|e| eprintln!("Failure in retrieving feed: {:?}", e)))
+        .filter(|c| c.is_ok())
+        .map(|a| a.unwrap())
+        .map(|response| {
+            // This is a hack, sometimes there's an "Incomplete body" that
+            // throws here. Fuck's sake.
+            let text = runtime.block_on(response.text()).unwrap_or(String::new());
+            Channel::read_from(text.as_bytes())
         })
-        .filter(|c| c.is_some())
-        .map(|c| c.unwrap())
+        .filter(|c| c.is_ok())
+        .map(|a| a.unwrap())
         .collect()
+
+}
+
+async fn read_channels(feeds: &Vec<Entry>) -> Vec<Result<reqwest::Response, reqwest::Error>> {
+    let client = Client::new();
+    let futures = feeds.iter().map(|entry| {
+        client.get(&entry.xml_url).send()
+    });
+    join_all(futures).await
 }
 
 pub fn get_unread_entries() -> Vec<Entry> {

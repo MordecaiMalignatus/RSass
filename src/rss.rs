@@ -27,13 +27,23 @@ pub fn load_feeds(feeds: &Vec<Entry>) -> Vec<Channel> {
         .map(|response| {
             // This is a hack, sometimes there's an "Incomplete body" that
             // throws here. Fuck's sake.
-            let text = runtime.block_on(response.text()).unwrap_or(String::new());
-            Channel::read_from(text.as_bytes())
+            match runtime.block_on(response.text()) {
+                Ok(text) => Some(Channel::read_from(text.as_bytes())),
+                Err(e) => {eprintln!("Can't acquire response body: {:?}", e); None}
+            }
         })
-        .filter(|c| c.is_ok())
+        .filter(|c| c.is_some())
+        .map(|a| a.unwrap())
+        .map(|a| match a {
+            Ok(c) => Some(c),
+            Err(e) => {
+                eprintln!("Can't construct channel from response: {:?}", e);
+                None
+            }
+        })
+        .filter(|a| a.is_some())
         .map(|a| a.unwrap())
         .collect()
-
 }
 
 async fn read_channels(feeds: &Vec<Entry>) -> Vec<Result<reqwest::Response, reqwest::Error>> {

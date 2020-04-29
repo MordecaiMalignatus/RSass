@@ -47,7 +47,7 @@ fn handle_invoke(webview: &mut WebView<Vec<rss::Entry>>, arg: &str) -> WVResult 
     match arg {
         "next" => {
             let data = webview.user_data_mut();
-            rss::mark_as_read(&data.pop().expect("Current entry is empty"));
+            rss::mark_as_read(&data.pop().expect("Current entry is empty")).expect("can't mark data as read");
             match data.last() {
                 Some(x) => {
                     let serialized = serde_json::to_string(x).unwrap();

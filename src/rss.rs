@@ -83,8 +83,7 @@ pub fn get_unread_entries() -> Vec<Entry> {
         .map(|(url, date)| {
             (
                 url,
-                date.parse::<DateTime<Local>>()
-                    .expect("Can't parse last-read date time"),
+                parse_time(&date),
             )
         })
         .collect::<HashMap<String, DateTime<Local>>>();
@@ -94,32 +93,79 @@ pub fn get_unread_entries() -> Vec<Entry> {
         .map(|feed| {
             let last_read_stamp = last_read
                 .get(feed.link())
-                .expect("Last-read dict does not have entry for this channel?");
+                .unwrap_or_else(|| panic!("Last-read dict does not have entry for this channel? feed: {:?}", feed));
             feed.items()
                 .iter()
                 .cloned()
-                .filter(|item| {
-                    item.pub_date()
-                        .expect("item does not have publication date added, making it impossible to determine what has been read")
-                        .parse::<DateTime<Local>>()
-                        .expect("Item's publication date is unparsable") > *last_read_stamp
-                }).collect::<Vec<rss::Item>>()
-        }).map(|vec| {
-            vec
-                .into_iter()
-                .map(|item| {
-                    Entry {
-                        title: item.title().unwrap_or("").to_string(),
-                        html_url: item.link().unwrap_or("").to_string(),
-                        rss_entry: item,
-                    }
-                }).collect::<Vec<Entry>>()
-        }).flatten()
+                .filter(|item| publication_date(item) > *last_read_stamp)
+                .collect::<Vec<rss::Item>>()
+        })
+        .map(|vec| {
+            vec.into_iter()
+                .map(|item| Entry {
+                    title: item.title().unwrap_or("").to_string(),
+                    html_url: item.link().unwrap_or("").to_string(),
+                    rss_entry: item,
+                })
+                .collect::<Vec<Entry>>()
+        })
+        .flatten()
         .collect::<Vec<Entry>>()
 }
 
-pub fn mark_as_read(read_entry: &Entry) -> () {
-    unimplemented!()
+fn publication_date(item: &rss::Item) -> DateTime<Local> {
+    if let Some(x) = item.pub_date() {
+        return parse_time(x)
+    };
+
+    if let Some(x) = item.dublin_core_ext() {
+        match x.dates() {
+            [date] => {
+                return parse_time(date)
+            }
+            _ => {}
+        }
+    };
+
+    panic!("Item does not have publication date: {:?}", item);
+}
+
+fn parse_time(time: &str) -> DateTime<Local> {
+    match time.parse::<DateTime<Local>>() {
+        Ok(x) => x,
+        Err(_) => match DateTime::parse_from_rfc2822(time) {
+            Ok(x) => DateTime::from(x),
+            Err(_) => match DateTime::parse_from_rfc3339(time) {
+                Ok(x) => DateTime::from(x),
+                Err(_) => panic!("Can't parse date from common formats: {:?}", time)
+            }
+        }
+    }
+}
+
+pub fn mark_as_read(read_entry: &Entry) -> Result<(), Box<dyn Error>> {
+    let mut feeds = utils::read_feeds();
+    let entry_date = read_entry
+        .rss_entry
+        .pub_date()
+        .expect("Read Entry doesn't have a publication date");
+    let entry_date = parse_time(entry_date);
+
+    feeds
+        .iter_mut()
+        .filter(|f| f.html_url == read_entry.html_url)
+        .for_each(|feed| match &feed.date_of_last_read_entry {
+            Some(date) => {
+                let feed_date = parse_time(date);
+
+                if entry_date > feed_date {
+                    feed.date_of_last_read_entry = Some(entry_date.to_string())
+                }
+            }
+            None => feed.date_of_last_read_entry = Some(entry_date.to_string()),
+        });
+
+    utils::write_feeds(feeds)
 }
 
 pub fn import_opml(path: &Path) -> Result<(), Box<dyn Error>> {

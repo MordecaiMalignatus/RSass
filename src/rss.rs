@@ -1,26 +1,38 @@
 use crate::utils;
+use chrono::prelude::*;
+use futures::future::join_all;
 use quick_xml;
-use reqwest::Client;
 use quick_xml::events::Event;
-use rss::Channel;
+use reqwest::Client;
+use rss::{Channel, Item};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::path::Path;
-use futures::future::join_all;
 use tokio;
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Entry {
+pub struct Feed {
     pub title: String,
     pub html_url: String,
     pub xml_url: String,
+    pub date_of_last_read_entry: Option<String>,
 }
 
-pub fn load_feeds(feeds: &Vec<Entry>) -> Vec<Channel> {
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Entry {
+    pub rss_entry: Item,
+    pub html_url: String,
+    pub title: String,
+}
+
+pub fn load_feeds(feeds: &Vec<Feed>) -> Vec<Channel> {
+    // TODO: This might only kick off a single thread, still only fetching everything sequentially.
     let mut runtime = tokio::runtime::Runtime::new().unwrap();
     let feeds = runtime.block_on(async { read_channels(feeds).await });
-    feeds.into_iter()
+    feeds
+        .into_iter()
         .map(|a| a.map_err(|e| eprintln!("Failure in retrieving feed: {:?}", e)))
         .filter(|c| c.is_ok())
         .map(|a| a.unwrap())
@@ -29,7 +41,10 @@ pub fn load_feeds(feeds: &Vec<Entry>) -> Vec<Channel> {
             // throws here. Fuck's sake.
             match runtime.block_on(response.text()) {
                 Ok(text) => Some(Channel::read_from(text.as_bytes())),
-                Err(e) => {eprintln!("Can't acquire response body: {:?}", e); None}
+                Err(e) => {
+                    eprintln!("Can't acquire response body: {:?}", e);
+                    None
+                }
             }
         })
         .filter(|c| c.is_some())
@@ -46,16 +61,61 @@ pub fn load_feeds(feeds: &Vec<Entry>) -> Vec<Channel> {
         .collect()
 }
 
-async fn read_channels(feeds: &Vec<Entry>) -> Vec<Result<reqwest::Response, reqwest::Error>> {
+async fn read_channels(feeds: &Vec<Feed>) -> Vec<Result<reqwest::Response, reqwest::Error>> {
     let client = Client::new();
-    let futures = feeds.iter().map(|entry| {
-        client.get(&entry.xml_url).send()
-    });
+    let futures = feeds.iter().map(|entry| client.get(&entry.xml_url).send());
     join_all(futures).await
 }
 
 pub fn get_unread_entries() -> Vec<Entry> {
-    unimplemented!()
+    let feeds = utils::read_feeds();
+    let channels = load_feeds(&feeds);
+    let last_read = feeds
+        .iter()
+        .map(|a| {
+            (
+                a.html_url.clone(),
+                a.date_of_last_read_entry
+                    .clone()
+                    .unwrap_or(Local.timestamp(0, 0).to_string()),
+            )
+        }) // If no last-read entry, use epoch as a "hasn't ever been read")
+        .map(|(url, date)| {
+            (
+                url,
+                date.parse::<DateTime<Local>>()
+                    .expect("Can't parse last-read date time"),
+            )
+        })
+        .collect::<HashMap<String, DateTime<Local>>>();
+
+    channels
+        .into_iter()
+        .map(|feed| {
+            let last_read_stamp = last_read
+                .get(feed.link())
+                .expect("Last-read dict does not have entry for this channel?");
+            feed.items()
+                .iter()
+                .cloned()
+                .filter(|item| {
+                    item.pub_date()
+                        .expect("item does not have publication date added, making it impossible to determine what has been read")
+                        .parse::<DateTime<Local>>()
+                        .expect("Item's publication date is unparsable") > *last_read_stamp
+                }).collect::<Vec<rss::Item>>()
+        }).map(|vec| {
+            vec
+                .into_iter()
+                .map(|item| {
+                    Entry {
+                        title: item.title().unwrap_or("").to_string(),
+                        html_url: item.link().unwrap_or("").to_string(),
+                        rss_entry: item,
+                    }
+                }).collect::<Vec<Entry>>()
+        }).flatten()
+        .collect::<Vec<Entry>>()
 }
 
 pub fn mark_as_read(read_entry: &Entry) -> () {
@@ -88,10 +148,11 @@ pub fn import_opml(path: &Path) -> Result<(), Box<dyn Error>> {
                             (key_str, value_str)
                         })
                         .collect::<Vec<_>>();
-                    let mut entry = Entry {
+                    let mut entry = Feed {
                         title: String::new(),
                         html_url: String::new(),
                         xml_url: String::new(),
+                        date_of_last_read_entry: None, // This won't be in any OPML.
                     };
                     for (key, value) in current_entry.iter() {
                         match key.as_str() {

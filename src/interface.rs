@@ -7,7 +7,7 @@ pub fn make_window() {
         .size(1024, 768)
         .content(Content::Html(make_html()))
         .invoke_handler(|view, arg| handle_invoke(view, arg))
-        .user_data(Vec::new()) //rss::get_unread_entries())
+        .user_data(rss::get_unread_entries())
         .run()
         .unwrap();
 }

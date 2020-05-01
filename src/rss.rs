@@ -80,12 +80,7 @@ pub fn get_unread_entries() -> Vec<Entry> {
                     .unwrap_or(Local.timestamp(0, 0).to_string()),
             )
         }) // If no last-read entry, use epoch as a "hasn't ever been read")
-        .map(|(url, date)| {
-            (
-                url,
-                parse_time(&date),
-            )
-        })
+        .map(|(url, date)| (url, parse_time(&date)))
         .collect::<HashMap<String, DateTime<Local>>>();
 
     channels
@@ -115,15 +110,13 @@ pub fn get_unread_entries() -> Vec<Entry> {
 
 fn publication_date(item: &rss::Item) -> Option<DateTime<Local>> {
     if let Some(x) = item.pub_date() {
-        return Some(parse_time(x))
+        return Some(parse_time(x));
     };
 
     if let Some(x) = item.dublin_core_ext() {
         match x.dates() {
-            [date] => {
-                return Some(parse_time(date))
-            }
-            _ => {},
+            [date] => return Some(parse_time(date)),
+            _ => {}
         }
     };
 
@@ -137,16 +130,22 @@ fn parse_time(time: &str) -> DateTime<Local> {
             Ok(x) => DateTime::from(x),
             Err(_) => match DateTime::parse_from_rfc3339(time) {
                 Ok(x) => DateTime::from(x),
+                // Sometimes, timestamps are in RFC-2822 format, but lack the
+                // timezone specifier, thus making it technically invalid. Try
+                // again, then see if it parses.
                 Err(_) => match DateTime::parse_from_rfc2822(&format!("{} +0000", time)) {
                     Ok(x) => DateTime::from(x),
-                    Err(e) => panic!("Can't parse date from common formats: {:?}", e)
-                }
-            }
-        }
+                    Err(e) => panic!("Can't parse date from common formats: {:?}", e),
+                },
+            },
+        },
     }
 }
 
 pub fn mark_as_read(read_entry: &Entry) -> Result<(), Box<dyn Error>> {
+    // TODO: This is buggy and does not actually work - The comparison is the
+    // concrete article link to the feed url, thus never actually matching. This
+    // needs to be fixed by propagating the `Feed` somehow.
     let mut feeds = utils::read_feeds();
     let entry_date = read_entry
         .rss_entry
@@ -162,10 +161,14 @@ pub fn mark_as_read(read_entry: &Entry) -> Result<(), Box<dyn Error>> {
                 let feed_date = parse_time(date);
 
                 if entry_date > feed_date {
+                    println!("writing new feed read date: {:?}", feed);
                     feed.date_of_last_read_entry = Some(entry_date.to_string())
                 }
             }
-            None => feed.date_of_last_read_entry = Some(entry_date.to_string()),
+            None => {
+                println!("writing new feed read date: {:?}", feed);
+                feed.date_of_last_read_entry = Some(entry_date.to_string());
+            }
         });
 
     utils::write_feeds(feeds)

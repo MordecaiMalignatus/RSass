@@ -14,7 +14,7 @@ struct Feeds {
 
 fn feedfile() -> PathBuf {
     let home = env::var("HOME").expect("$HOME isn't set. Wot?");
-    PathBuf::from(home).join(".config/azfeed/feeds.toml")
+    PathBuf::from(home).join(".config/rsass/feeds.toml")
 }
 
 pub fn read_feeds() -> Vec<Feed> {

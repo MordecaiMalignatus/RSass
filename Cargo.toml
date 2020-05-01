@@ -1,5 +1,5 @@
 [package]
-name = "azfeed"
+name = "rsass"
 version = "0.1.0"
 authors = ["Mordecai Malignatus <mordecai@malignat.su>"]
 edition = "2018"

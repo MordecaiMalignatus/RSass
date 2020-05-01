@@ -6,7 +6,7 @@ It does not have a lot of features, it is just a tiny, hacked-together thing,
 and it barely works. Right now, it runs via `cargo run` -- it's not even close
 to being usable.
 
-![./.documentation/screenshot.png]
+![Screenshot](./.documentation/RSass-preview.png)
 
 ## Core concepts
 

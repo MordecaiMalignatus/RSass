@@ -4,7 +4,7 @@ use web_view::*;
 pub fn make_window() {
     web_view::builder()
         .title("RSass")
-        .size(1024, 768)
+        .size(550, 700)
         .content(Content::Html(make_html()))
         .invoke_handler(|view, arg| handle_invoke(view, arg))
         .user_data(rss::get_unread_entries())
@@ -22,13 +22,15 @@ fn make_html() -> String {
     {scripts}
     {styles}
   </head>
-  <body>
-    <h1 id="headline">
+  <body class="near-black bg-washed-yellow">
+  <div class="pl4">
+    <h1 id="headline" class="h1 tracked">
 
     </h1>
-    <div id = "body"> </div>
+    <div id = "body" class="measure"> </div>
     <button id="next-btn" onclick="requestNext()">Next</button>
     <button id="open-url-btn" onclick="openUrl()">Open in Browser</button>
+  </div>
   </body>
 </html>
 "#,
@@ -47,7 +49,8 @@ fn handle_invoke(webview: &mut WebView<Vec<rss::Entry>>, arg: &str) -> WVResult 
     match arg {
         "next" => {
             let data = webview.user_data_mut();
-            rss::mark_as_read(&data.pop().expect("Current entry is empty")).expect("can't mark data as read");
+            rss::mark_as_read(&data.pop().expect("Current entry is empty"))
+                .expect("can't mark data as read");
             match data.last() {
                 Some(x) => {
                     let serialized = serde_json::to_string(x).unwrap();

@@ -137,7 +137,10 @@ fn parse_time(time: &str) -> DateTime<Local> {
             Ok(x) => DateTime::from(x),
             Err(_) => match DateTime::parse_from_rfc3339(time) {
                 Ok(x) => DateTime::from(x),
-                Err(_) => panic!("Can't parse date from common formats: {:?}", time)
+                Err(_) => match DateTime::parse_from_rfc2822(&format!("{} +0000", time)) {
+                    Ok(x) => DateTime::from(x),
+                    Err(e) => panic!("Can't parse date from common formats: {:?}", e)
+                }
             }
         }
     }

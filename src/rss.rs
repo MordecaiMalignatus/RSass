@@ -93,11 +93,11 @@ pub fn get_unread_entries() -> Vec<Entry> {
         .map(|feed| {
             let last_read_stamp = last_read
                 .get(feed.link())
-                .unwrap_or_else(|| panic!("Last-read dict does not have entry for this channel? feed: {:?}", feed));
+                .unwrap_or_else(|| panic!("Last-read dict does not have entry for this channel. Check http/https in html_url. feed: {:?}", feed));
             feed.items()
                 .iter()
                 .cloned()
-                .filter(|item| publication_date(item) > *last_read_stamp)
+                .filter(|item| publication_date(item).unwrap_or(Local::now()) > *last_read_stamp)
                 .collect::<Vec<rss::Item>>()
         })
         .map(|vec| {
@@ -113,21 +113,21 @@ pub fn get_unread_entries() -> Vec<Entry> {
         .collect::<Vec<Entry>>()
 }
 
-fn publication_date(item: &rss::Item) -> DateTime<Local> {
+fn publication_date(item: &rss::Item) -> Option<DateTime<Local>> {
     if let Some(x) = item.pub_date() {
-        return parse_time(x)
+        return Some(parse_time(x))
     };
 
     if let Some(x) = item.dublin_core_ext() {
         match x.dates() {
             [date] => {
-                return parse_time(date)
+                return Some(parse_time(date))
             }
-            _ => {}
+            _ => {},
         }
     };
 
-    panic!("Item does not have publication date: {:?}", item);
+    None
 }
 
 fn parse_time(time: &str) -> DateTime<Local> {

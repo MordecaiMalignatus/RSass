@@ -1,5 +1,7 @@
 use crate::rss;
 use web_view::*;
+use std::error::Error;
+use std::process::Command;
 
 pub fn make_window() {
     web_view::builder()
@@ -28,8 +30,10 @@ fn make_html() -> String {
 
     </h1>
     <div id = "body" class="measure"> </div>
-    <button id="next-btn" onclick="requestNext()">Next</button>
-    <button id="open-url-btn" onclick="openUrl()">Open in Browser</button>
+    <div id="buttons" class="pb4">
+      <button id="next-btn" onclick="requestNext()">Next</button>
+      <button id="open-url-btn" onclick="openUrl()">Open in Browser</button>
+    </div>
   </div>
   </body>
 </html>
@@ -59,6 +63,38 @@ fn handle_invoke(webview: &mut WebView<Vec<rss::Entry>>, arg: &str) -> WVResult 
                 None => webview.eval("displayDone();"),
             }
         }
+        "openCurrentUrl" => {
+            let data = webview.user_data();
+            match open_in_shell(&data.last().unwrap().html_url) {
+                Ok(_) => webview.eval("openSuccessful()"),
+                Err(e) => webview.eval("openFailed()"),
+            }
+        },
         _ => panic!("Unknown argument: {}", arg),
+    }
+}
+
+
+#[cfg(target_os = "macos")]
+fn open_in_shell(url: &str) -> Result<(), Box<dyn Error>> {
+    match Command::new("open").arg(url).output() {
+        Ok(_) => Ok(()),
+        Err(e) => Err(Box::new(e)),
+    }
+}
+
+#[cfg(target_family = "windows")]
+fn open_in_shell(url: &str) -> Result<(), Box<dyn Error>> {
+    match Command::new("start").arg(url).output() {
+        Ok(_) => Ok(()),
+        Err(e) => Err(Box::new(e)),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn open_in_shell(url: &str) -> Result<(), Box<dyn Error>> {
+    match Command::new("xdg-open").arg(url).output() {
+        Ok(_) => Ok(()),
+        Err(e) => Err(Box::new(e)),
     }
 }

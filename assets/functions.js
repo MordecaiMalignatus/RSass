@@ -15,7 +15,7 @@ function render(entry) {
 };
 
 function openUrl() {
-    open(document.__data.current_entry.html_url, "_blank");
+    external.invoke("openCurrentUrl");
 };
 
 function displayDone() {
@@ -23,4 +23,12 @@ function displayDone() {
     document.getElementById("body").innerHTML = "";
 };
 
-requestNext();
+function openSuccessful() {
+    console.log("Opened url" + document.__data.current_entry.title);
+}
+
+function openFailed() {
+    console.log("Failed to open URL at: " + document.__data.current_entry.title);
+}
+
+external.invoke("init");

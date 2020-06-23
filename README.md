@@ -40,3 +40,5 @@ I welcome any patch to make this thing better, because I do want to use it as
 primary RSS reader. If you're not sure what to work on, file an issue with
 something that annoys you about using it, and we'll chat about the best way to
 fix it.
+
+Licensed under the GPL v3.

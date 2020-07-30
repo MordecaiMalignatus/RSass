@@ -1,7 +1,7 @@
 use crate::rss;
-use web_view::*;
 use std::error::Error;
 use std::process::Command;
+use web_view::*;
 
 pub fn make_window() {
     web_view::builder()
@@ -51,6 +51,16 @@ fn make_html() -> String {
 
 fn handle_invoke(webview: &mut WebView<Vec<rss::Entry>>, arg: &str) -> WVResult {
     match arg {
+        "init" => {
+            let data = webview.user_data_mut();
+            match data.last() {
+                Some(x) => {
+                    let serialized = serde_json::to_string(x).unwrap();
+                    webview.eval(&format!(r#"render({});"#, serialized))
+                }
+                None => webview.eval("nothingNew();"),
+            }
+        }
         "next" => {
             let data = webview.user_data_mut();
             rss::mark_as_read(&data.pop().expect("Current entry is empty"))
@@ -67,13 +77,12 @@ fn handle_invoke(webview: &mut WebView<Vec<rss::Entry>>, arg: &str) -> WVResult 
             let data = webview.user_data();
             match open_in_shell(&data.last().unwrap().html_url) {
                 Ok(_) => webview.eval("openSuccessful()"),
-                Err(e) => webview.eval("openFailed()"),
+                Err(_) => webview.eval("openFailed()"),
             }
-        },
+        }
         _ => panic!("Unknown argument: {}", arg),
     }
 }
-
 
 #[cfg(target_os = "macos")]
 fn open_in_shell(url: &str) -> Result<(), Box<dyn Error>> {

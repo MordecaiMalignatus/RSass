@@ -6,6 +6,7 @@ use quick_xml::events::Event;
 use reqwest::Client;
 use rss::{Channel, Item};
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::Entry as MapEntry;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
@@ -17,7 +18,6 @@ pub struct Feed {
     pub title: String,
     pub html_url: String,
     pub xml_url: String,
-    pub date_of_last_read_entry: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -25,40 +25,36 @@ pub struct Entry {
     pub rss_entry: Item,
     pub html_url: String,
     pub title: String,
+    pub feed: String,
 }
 
-pub fn load_feeds(feeds: &Vec<Feed>) -> Vec<Channel> {
+pub fn load_feeds(feeds: Vec<Feed>) -> Vec<(Feed, Channel)> {
     // TODO: This might only kick off a single thread, still only fetching everything sequentially.
     let mut runtime = tokio::runtime::Runtime::new().unwrap();
-    let feeds = runtime.block_on(async { read_channels(feeds).await });
-    feeds
+    let channels = runtime.block_on(async { read_channels(&feeds).await });
+    let mut res = Vec::new();
+
+    channels
         .into_iter()
-        .map(|a| a.map_err(|e| eprintln!("Failure in retrieving feed: {:?}", e)))
-        .filter(|c| c.is_ok())
-        .map(|a| a.unwrap())
-        .map(|response| {
-            // This is a hack, sometimes there's an "Incomplete body" that
-            // throws here. Fuck's sake.
-            match runtime.block_on(response.text()) {
-                Ok(text) => Some(Channel::read_from(text.as_bytes())),
-                Err(e) => {
-                    eprintln!("Can't acquire response body: {:?}", e);
-                    None
-                }
-            }
-        })
-        .filter(|c| c.is_some())
-        .map(|a| a.unwrap())
-        .map(|a| match a {
-            Ok(c) => Some(c),
-            Err(e) => {
-                eprintln!("Can't construct channel from response: {:?}", e);
-                None
-            }
-        })
-        .filter(|a| a.is_some())
-        .map(|a| a.unwrap())
-        .collect()
+        .zip(feeds.into_iter())
+        .for_each(|(channel, feed)| match channel {
+            Err(e) => eprintln!("Failure in retrieving feed {}: {:?}", feed.title, e),
+            Ok(x) => match runtime.block_on(x.text()) {
+                Err(e) => eprintln!(
+                    "Can't acquire response body for feed {}: {:?}",
+                    feed.title, e
+                ),
+                Ok(text) => match Channel::read_from(text.as_bytes()) {
+                    Ok(c) => res.push((feed, c)),
+                    Err(e) => eprintln!(
+                        "Can't construct channel from response for feed {}: {:?}",
+                        feed.title, e
+                    ),
+                },
+            },
+        });
+
+    res
 }
 
 async fn read_channels(feeds: &Vec<Feed>) -> Vec<Result<reqwest::Response, reqwest::Error>> {
@@ -69,43 +65,32 @@ async fn read_channels(feeds: &Vec<Feed>) -> Vec<Result<reqwest::Response, reqwe
 
 pub fn get_unread_entries() -> Vec<Entry> {
     let feeds = utils::read_feeds();
-    let channels = load_feeds(&feeds);
-    let last_read = feeds
-        .iter()
-        .map(|a| {
-            (
-                a.html_url.clone(),
-                a.date_of_last_read_entry
-                    .clone()
-                    .unwrap_or(Local.timestamp(0, 0).to_string()),
-            )
-        }) // If no last-read entry, use epoch as a "hasn't ever been read")
-        .map(|(url, date)| (url, parse_time(&date)))
-        .collect::<HashMap<String, DateTime<Local>>>();
+    let feeds_and_channels = load_feeds(feeds);
+    let cache = dbg!(utils::read_cache_file());
+    let mut res = Vec::new();
 
-    channels
-        .into_iter()
-        .map(|feed| {
-            let last_read_stamp = last_read
-                .get(feed.link())
-                .unwrap_or_else(|| panic!("Last-read dict does not have entry for this channel. Check http/https in html_url. feed: {:?}", feed));
-            feed.items()
-                .iter()
-                .cloned()
-                .filter(|item| publication_date(item).unwrap_or(Local::now()) > *last_read_stamp)
-                .collect::<Vec<rss::Item>>()
-        })
-        .map(|vec| {
-            vec.into_iter()
-                .map(|item| Entry {
-                    title: item.title().unwrap_or("").to_string(),
-                    html_url: item.link().unwrap_or("").to_string(),
-                    rss_entry: item,
-                })
-                .collect::<Vec<Entry>>()
-        })
-        .flatten()
-        .collect::<Vec<Entry>>()
+    for (feed, channel) in feeds_and_channels {
+        let items = channel.items();
+        let empty_read = Vec::new();
+        let feed_cache = dbg!(cache.get(&feed.title).unwrap_or(&empty_read));
+
+        items
+            .into_iter()
+            .filter(|item| match item.guid() {
+                Some(x) => feed_cache.contains(&x.value().to_string()),
+                None => true,
+            })
+            .map(|item| Entry {
+                title: feed.title.clone(),
+                rss_entry: item.clone(),
+                html_url: feed.html_url.clone(),
+                feed: feed.xml_url.clone(),
+            })
+            .for_each(|item| res.push(item))
+    }
+
+    res.reverse();
+    res
 }
 
 fn publication_date(item: &rss::Item) -> Option<DateTime<Local>> {
@@ -131,8 +116,8 @@ fn parse_time(time: &str) -> DateTime<Local> {
             Err(_) => match DateTime::parse_from_rfc3339(time) {
                 Ok(x) => DateTime::from(x),
                 // Sometimes, timestamps are in RFC-2822 format, but lack the
-                // timezone specifier, thus making it technically invalid. Try
-                // again, then see if it parses.
+                // timezone specifier, thus making it technically invalid. Add
+                // neutral offset, then try again, then see if it parses.
                 Err(_) => match DateTime::parse_from_rfc2822(&format!("{} +0000", time)) {
                     Ok(x) => DateTime::from(x),
                     Err(e) => panic!("Can't parse date from common formats: {:?}", e),
@@ -143,35 +128,24 @@ fn parse_time(time: &str) -> DateTime<Local> {
 }
 
 pub fn mark_as_read(read_entry: &Entry) -> Result<(), Box<dyn Error>> {
-    // TODO: This is buggy and does not actually work - The comparison is the
-    // concrete article link to the feed url, thus never actually matching. This
-    // needs to be fixed by propagating the `Feed` somehow.
-    let mut feeds = utils::read_feeds();
-    let entry_date = read_entry
-        .rss_entry
-        .pub_date()
-        .expect("Read Entry doesn't have a publication date");
-    let entry_date = parse_time(entry_date);
+    println!("Making as read: {}", read_entry.rss_entry.guid().unwrap().value());
+    let mut cache_dict = utils::read_cache_file();
 
-    feeds
-        .iter_mut()
-        .filter(|f| f.html_url == read_entry.html_url)
-        .for_each(|feed| match &feed.date_of_last_read_entry {
-            Some(date) => {
-                let feed_date = parse_time(date);
-
-                if entry_date > feed_date {
-                    println!("writing new feed read date: {:?}", feed);
-                    feed.date_of_last_read_entry = Some(entry_date.to_string())
-                }
-            }
-            None => {
-                println!("writing new feed read date: {:?}", feed);
-                feed.date_of_last_read_entry = Some(entry_date.to_string());
-            }
-        });
-
-    utils::write_feeds(feeds)
+    match read_entry.rss_entry.guid() {
+        Some(guid) => {
+            let mut cache = cache_dict.entry(read_entry.title.clone()).or_insert(Vec::new());
+            cache.push(guid.value().to_string());
+            utils::write_cache_file(&cache_dict);
+            Ok(())
+        }
+        None => {
+            eprintln!("Can't find GUID on read entry: {:?}", read_entry);
+            Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Can't read GUID from item",
+            )))
+        }
+    }
 }
 
 pub fn import_opml(path: &Path) -> Result<(), Box<dyn Error>> {
@@ -204,7 +178,6 @@ pub fn import_opml(path: &Path) -> Result<(), Box<dyn Error>> {
                         title: String::new(),
                         html_url: String::new(),
                         xml_url: String::new(),
-                        date_of_last_read_entry: None, // This won't be in any OPML.
                     };
                     for (key, value) in current_entry.iter() {
                         match key.as_str() {

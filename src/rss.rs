@@ -6,8 +6,6 @@ use quick_xml::events::Event;
 use reqwest::Client;
 use rss::{Channel, Item};
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::Entry as MapEntry;
-use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::path::Path;
@@ -64,33 +62,34 @@ async fn read_channels(feeds: &Vec<Feed>) -> Vec<Result<reqwest::Response, reqwe
 }
 
 pub fn get_unread_entries() -> Vec<Entry> {
-    let feeds = utils::read_feeds();
-    let feeds_and_channels = load_feeds(feeds);
-    let cache = dbg!(utils::read_cache_file());
-    let mut res = Vec::new();
+    unimplemented!();
+    // let feeds = utils::read_feeds();
+    // let feeds_and_channels = load_feeds(feeds);
 
-    for (feed, channel) in feeds_and_channels {
-        let items = channel.items();
-        let empty_read = Vec::new();
-        let feed_cache = dbg!(cache.get(&feed.title).unwrap_or(&empty_read));
+    // let mut res = Vec::new();
 
-        items
-            .into_iter()
-            .filter(|item| match item.guid() {
-                Some(x) => feed_cache.contains(&x.value().to_string()),
-                None => true,
-            })
-            .map(|item| Entry {
-                title: feed.title.clone(),
-                rss_entry: item.clone(),
-                html_url: feed.html_url.clone(),
-                feed: feed.xml_url.clone(),
-            })
-            .for_each(|item| res.push(item))
-    }
+    // for (feed, channel) in feeds_and_channels {
+    //     let items = channel.items();
+    //     let empty_read = Vec::new();
+    //     let feed_cache = dbg!(cache.get(&feed.title).unwrap_or(&empty_read));
 
-    res.reverse();
-    res
+    //     items
+    //         .into_iter()
+    //         .filter(|item| match item.guid() {
+    //             Some(x) => feed_cache.contains(&x.value().to_string()),
+    //             None => true,
+    //         })
+    //         .map(|item| Entry {
+    //             title: feed.title.clone(),
+    //             rss_entry: item.clone(),
+    //             html_url: feed.html_url.clone(),
+    //             feed: feed.xml_url.clone(),
+    //         })
+    //         .for_each(|item| res.push(item))
+    // }
+
+    // res.reverse();
+    // res
 }
 
 fn publication_date(item: &rss::Item) -> Option<DateTime<Local>> {
@@ -128,24 +127,7 @@ fn parse_time(time: &str) -> DateTime<Local> {
 }
 
 pub fn mark_as_read(read_entry: &Entry) -> Result<(), Box<dyn Error>> {
-    println!("Making as read: {}", read_entry.rss_entry.guid().unwrap().value());
-    let mut cache_dict = utils::read_cache_file();
-
-    match read_entry.rss_entry.guid() {
-        Some(guid) => {
-            let mut cache = cache_dict.entry(read_entry.title.clone()).or_insert(Vec::new());
-            cache.push(guid.value().to_string());
-            utils::write_cache_file(&cache_dict);
-            Ok(())
-        }
-        None => {
-            eprintln!("Can't find GUID on read entry: {:?}", read_entry);
-            Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Can't read GUID from item",
-            )))
-        }
-    }
+    unimplemented!()
 }
 
 pub fn import_opml(path: &Path) -> Result<(), Box<dyn Error>> {

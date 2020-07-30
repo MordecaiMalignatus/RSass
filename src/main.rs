@@ -1,3 +1,4 @@
+mod db;
 mod interface;
 mod rss;
 mod utils;
@@ -22,10 +23,8 @@ fn main() {
         .get_matches();
 
     match args.subcommand_name() {
-        Some("import") => {},
+        Some("import") => {}
         Some(_) => panic!("Unknown subcommand"),
-        None => {
-            interface::make_window()
-        },
+        None => interface::make_window(),
     }
 }

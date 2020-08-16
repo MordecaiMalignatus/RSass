@@ -4,8 +4,10 @@ mod rss;
 mod utils;
 
 use clap::{App, Arg, SubCommand};
+use std::error::Error;
+use std::path::PathBuf;
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     let args = App::new("rsass")
         .version("0.1")
         .author("Mordecai Malignatus")
@@ -20,11 +22,21 @@ fn main() {
                         .help("OPML file to import"),
                 ),
         )
+        .subcommand(
+            SubCommand::with_name("fetch").about("Fetch and store feeds without launching viewer"),
+        )
         .get_matches();
 
-    match args.subcommand_name() {
-        Some("import") => {}
-        Some(_) => panic!("Unknown subcommand"),
-        None => interface::make_window(),
+    match args.subcommand() {
+        ("import", Some(import_matches)) => {
+            let path = import_matches.value_of("FILE").expect("FILE is required");
+            let path = PathBuf::from(path);
+            rss::import_opml(&path)
+        }
+        (unknown, Some(_)) => panic!("Unknown subcommand: {}", unknown),
+        _ => {
+            interface::make_window();
+            Ok(())
+        }
     }
 }

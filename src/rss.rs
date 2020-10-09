@@ -10,6 +10,7 @@ use std::error::Error;
 use std::fs;
 use std::path::Path;
 use tokio;
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Feed {
@@ -78,8 +79,12 @@ pub fn get_unread_entries() -> Vec<Entry> {
                 html_url: feed.html_url.clone(),
                 title: item.title().unwrap_or("<no title>").to_string(),
                 feed: feed.title.clone(),
-                // Our "read" scheme relies on the GUID being present.
-                guid: item.guid().expect("A GUID is not set").value().to_string(),
+                // Our "read" scheme relies on the GUID being present, so we
+                // generate one if none is set.
+                guid: item
+                    .guid()
+                    .map(|guid| guid.value().to_string())
+                    .unwrap_or_else(|| format!("{}", Uuid::new_v4()).to_string()),
             })
             .for_each(|item| res.push(item))
     }

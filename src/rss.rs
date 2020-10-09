@@ -1,4 +1,4 @@
-use crate::utils;
+use crate::{utils, db::get_db_connection, db::insert_new_unread_entries};
 use futures::future::join_all;
 use quick_xml;
 use quick_xml::events::Event;
@@ -26,6 +26,8 @@ pub struct Entry {
     pub feed: String,
     pub guid: String,
 }
+
+type NewArticleCount = u32;
 
 pub fn load_feeds(feeds: Vec<Feed>) -> Vec<(Feed, Channel)> {
     // TODO: This might only kick off a single thread, still only fetching everything sequentially.
@@ -62,10 +64,7 @@ async fn read_channels(feeds: &Vec<Feed>) -> Vec<Result<reqwest::Response, reqwe
     join_all(futures).await
 }
 
-pub fn get_unread_entries() -> Vec<Entry> {
-    let feeds = utils::read_feeds();
-    let feeds_and_channels = load_feeds(feeds);
-
+pub fn get_unread_entries(feeds_and_channels: Vec<(Feed, Channel)>) -> Vec<Entry> {
     let mut res = Vec::new();
 
     for (feed, channel) in feeds_and_channels {
@@ -92,8 +91,20 @@ pub fn get_unread_entries() -> Vec<Entry> {
     res
 }
 
+pub fn retrieve_new_entries() -> NewArticleCount {
+    let feeds = utils::read_feeds();
+    let channels = load_feeds(feeds);
+    let unread_entries = get_unread_entries(channels);
+    let unread_count = unread_entries.len() as NewArticleCount;
+
+    let conn = get_db_connection();
+    insert_new_unread_entries(&conn, unread_entries);
+
+    unread_count
+}
+
 pub fn mark_as_read(read_entry: &Entry) -> Result<(), Box<dyn Error>> {
-    let conn = crate::db::get_db_connection();
+    let conn = get_db_connection();
     crate::db::mark_entry_as_read(&conn, &read_entry.guid)
 }
 

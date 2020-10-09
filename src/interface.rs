@@ -1,17 +1,21 @@
-use crate::rss;
+use crate::{db, rss};
 use std::error::Error;
 use std::process::Command;
 use web_view::*;
 
-pub fn make_window() {
+pub fn make_window() -> Result<(), Box<dyn Error>>{
+    let unread = db::get_unread_entries(&db::get_db_connection())?;
+
     web_view::builder()
         .title("RSass")
         .size(550, 700)
         .content(Content::Html(make_html()))
         .invoke_handler(|view, arg| handle_invoke(view, arg))
-        .user_data(rss::get_unread_entries())
+        .user_data(unread)
         .run()
         .unwrap();
+
+    Ok(())
 }
 
 fn make_html() -> String {

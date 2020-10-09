@@ -4,8 +4,8 @@ mod rss;
 mod utils;
 
 use clap::{App, Arg, SubCommand};
-use std::error::Error;
 use std::path::PathBuf;
+use std::{error::Error, thread};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = App::new("rsass")
@@ -35,8 +35,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         (unknown, Some(_)) => panic!("Unknown subcommand: {}", unknown),
         _ => {
-            interface::make_window();
-            Ok(())
+            thread::spawn(|| {
+                let unread_count = rss::retrieve_new_entries();
+                println!("Retrieved {} new articles", unread_count)
+            });
+            interface::make_window()
         }
     }
 }

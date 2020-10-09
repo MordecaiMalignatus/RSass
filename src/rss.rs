@@ -1,5 +1,4 @@
 use crate::utils;
-use chrono::prelude::*;
 use futures::future::join_all;
 use quick_xml;
 use quick_xml::events::Event;
@@ -75,9 +74,9 @@ pub fn get_unread_entries() -> Vec<Entry> {
         items
             .into_iter()
             .map(|item| Entry {
-                content: item.content().unwrap_or("<no content>").to_string(),
                 html_url: feed.html_url.clone(),
                 title: item.title().unwrap_or("<no title>").to_string(),
+                content: item.content().unwrap_or("<no content>").to_string(),
                 feed: feed.title.clone(),
                 // Our "read" scheme relies on the GUID being present, so we
                 // generate one if none is set.
@@ -93,27 +92,9 @@ pub fn get_unread_entries() -> Vec<Entry> {
     res
 }
 
-fn parse_time(time: &str) -> DateTime<Local> {
-    match time.parse::<DateTime<Local>>() {
-        Ok(x) => x,
-        Err(_) => match DateTime::parse_from_rfc2822(time) {
-            Ok(x) => DateTime::from(x),
-            Err(_) => match DateTime::parse_from_rfc3339(time) {
-                Ok(x) => DateTime::from(x),
-                // Sometimes, timestamps are in RFC-2822 format, but lack the
-                // timezone specifier, thus making it technically invalid. Add
-                // neutral offset, then try again, then see if it parses.
-                Err(_) => match DateTime::parse_from_rfc2822(&format!("{} +0000", time)) {
-                    Ok(x) => DateTime::from(x),
-                    Err(e) => panic!("Can't parse date from common formats: {:?}", e),
-                },
-            },
-        },
-    }
-}
-
-pub fn mark_as_read(_read_entry: &Entry) -> Result<(), Box<dyn Error>> {
-    unimplemented!()
+pub fn mark_as_read(read_entry: &Entry) -> Result<(), Box<dyn Error>> {
+    let conn = crate::db::get_db_connection();
+    crate::db::mark_entry_as_read(&conn, &read_entry.guid)
 }
 
 pub fn import_opml(path: &Path) -> Result<(), Box<dyn Error>> {

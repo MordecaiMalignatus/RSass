@@ -14,7 +14,6 @@ quick-xml = "0.18.1"
 reqwest = "0.10.4"
 futures = "0.3"
 tokio = "0.2"
-chrono = "0.4.11"
 clap = "~2.33"
 rusqlite = { version = "0.23.1", features = ["bundled"] }
 uuid = { version = "0.8.1", features = ["v4"] }

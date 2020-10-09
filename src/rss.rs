@@ -4,7 +4,7 @@ use futures::future::join_all;
 use quick_xml;
 use quick_xml::events::Event;
 use reqwest::Client;
-use rss::{Channel, Item};
+use rss::Channel;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs;
@@ -18,12 +18,13 @@ pub struct Feed {
     pub xml_url: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Entry {
-    pub rss_entry: Item,
     pub html_url: String,
     pub title: String,
+    pub content: String,
     pub feed: String,
+    pub guid: String,
 }
 
 pub fn load_feeds(feeds: Vec<Feed>) -> Vec<(Feed, Channel)> {
@@ -62,49 +63,29 @@ async fn read_channels(feeds: &Vec<Feed>) -> Vec<Result<reqwest::Response, reqwe
 }
 
 pub fn get_unread_entries() -> Vec<Entry> {
-    unimplemented!();
-    // let feeds = utils::read_feeds();
-    // let feeds_and_channels = load_feeds(feeds);
+    let feeds = utils::read_feeds();
+    let feeds_and_channels = load_feeds(feeds);
 
-    // let mut res = Vec::new();
+    let mut res = Vec::new();
 
-    // for (feed, channel) in feeds_and_channels {
-    //     let items = channel.items();
-    //     let empty_read = Vec::new();
-    //     let feed_cache = dbg!(cache.get(&feed.title).unwrap_or(&empty_read));
+    for (feed, channel) in feeds_and_channels {
+        let items = channel.items();
 
-    //     items
-    //         .into_iter()
-    //         .filter(|item| match item.guid() {
-    //             Some(x) => feed_cache.contains(&x.value().to_string()),
-    //             None => true,
-    //         })
-    //         .map(|item| Entry {
-    //             title: feed.title.clone(),
-    //             rss_entry: item.clone(),
-    //             html_url: feed.html_url.clone(),
-    //             feed: feed.xml_url.clone(),
-    //         })
-    //         .for_each(|item| res.push(item))
-    // }
+        items
+            .into_iter()
+            .map(|item| Entry {
+                content: item.content().unwrap_or("<no content>").to_string(),
+                html_url: feed.html_url.clone(),
+                title: item.title().unwrap_or("<no title>").to_string(),
+                feed: feed.title.clone(),
+                // Our "read" scheme relies on the GUID being present.
+                guid: item.guid().expect("A GUID is not set").value().to_string(),
+            })
+            .for_each(|item| res.push(item))
+    }
 
-    // res.reverse();
-    // res
-}
-
-fn publication_date(item: &rss::Item) -> Option<DateTime<Local>> {
-    if let Some(x) = item.pub_date() {
-        return Some(parse_time(x));
-    };
-
-    if let Some(x) = item.dublin_core_ext() {
-        match x.dates() {
-            [date] => return Some(parse_time(date)),
-            _ => {}
-        }
-    };
-
-    None
+    res.reverse();
+    res
 }
 
 fn parse_time(time: &str) -> DateTime<Local> {
@@ -126,7 +107,7 @@ fn parse_time(time: &str) -> DateTime<Local> {
     }
 }
 
-pub fn mark_as_read(read_entry: &Entry) -> Result<(), Box<dyn Error>> {
+pub fn mark_as_read(_read_entry: &Entry) -> Result<(), Box<dyn Error>> {
     unimplemented!()
 }
 

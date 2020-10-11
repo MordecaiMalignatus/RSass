@@ -7,10 +7,9 @@ function requestNext() {
 };
 
 function render(entry) {
-    console.log(entry);
     document.__data.current_entry = entry;
 
-    document.getElementById("body").innerHTML = entry.rss_entry.content;
+    document.getElementById("body").innerHTML = entry.content;
     document.getElementById("headline").innerHTML = entry.title;
 };
 

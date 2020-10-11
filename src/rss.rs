@@ -1,4 +1,4 @@
-use crate::{utils, db::get_db_connection, db::insert_new_unread_entries};
+use crate::{utils, db};
 use futures::future::join_all;
 use quick_xml;
 use quick_xml::events::Event;
@@ -29,7 +29,7 @@ pub struct Entry {
 
 type NewArticleCount = u32;
 
-pub fn load_feeds(feeds: Vec<Feed>) -> Vec<(Feed, Channel)> {
+fn load_feeds(feeds: Vec<Feed>) -> Vec<(Feed, Channel)> {
     // TODO: This might only kick off a single thread, still only fetching everything sequentially.
     let mut runtime = tokio::runtime::Runtime::new().unwrap();
     let channels = runtime.block_on(async { read_channels(&feeds).await });
@@ -58,13 +58,15 @@ pub fn load_feeds(feeds: Vec<Feed>) -> Vec<(Feed, Channel)> {
     res
 }
 
+// TODO: This can be inlined, as it's not really a function, and more a way to
+// give a name to a large async lambda.
 async fn read_channels(feeds: &Vec<Feed>) -> Vec<Result<reqwest::Response, reqwest::Error>> {
     let client = Client::new();
     let futures = feeds.iter().map(|entry| client.get(&entry.xml_url).send());
     join_all(futures).await
 }
 
-pub fn get_unread_entries(feeds_and_channels: Vec<(Feed, Channel)>) -> Vec<Entry> {
+fn load_entries(feeds_and_channels: Vec<(Feed, Channel)>) -> Vec<Entry> {
     let mut res = Vec::new();
 
     for (feed, channel) in feeds_and_channels {
@@ -79,6 +81,7 @@ pub fn get_unread_entries(feeds_and_channels: Vec<(Feed, Channel)>) -> Vec<Entry
                 feed: feed.title.clone(),
                 // Our "read" scheme relies on the GUID being present, so we
                 // generate one if none is set.
+                // TODO: This needs to be deterministic, ie hashing the content + title or something.
                 guid: item
                     .guid()
                     .map(|guid| guid.value().to_string())
@@ -91,23 +94,27 @@ pub fn get_unread_entries(feeds_and_channels: Vec<(Feed, Channel)>) -> Vec<Entry
     res
 }
 
+/// Run through all configured config files, load all items, and stuff them into
+/// the cache db.
 pub fn retrieve_new_entries() -> NewArticleCount {
     let feeds = utils::read_feeds();
     let channels = load_feeds(feeds);
-    let unread_entries = get_unread_entries(channels);
+    let unread_entries = load_entries(channels);
     let unread_count = unread_entries.len() as NewArticleCount;
 
-    let conn = get_db_connection();
-    insert_new_unread_entries(&conn, unread_entries);
+    let conn = db::get_db_connection();
+    db::insert_new_unread_entries(&conn, unread_entries);
 
     unread_count
 }
 
 pub fn mark_as_read(read_entry: &Entry) -> Result<(), Box<dyn Error>> {
-    let conn = get_db_connection();
-    crate::db::mark_entry_as_read(&conn, &read_entry.guid)
+    db::mark_entry_as_read(&db::get_db_connection(), &read_entry.guid)
 }
 
+/// Import feeds specified at `path`, writing the result to the `feeds.toml` at
+/// the end. This has been tested on feedly OPML, and not widely, so if you find
+/// feeds missing after import, open an issue.
 pub fn import_opml(path: &Path) -> Result<(), Box<dyn Error>> {
     let opml_content = fs::read_to_string(path)?;
     let mut reader = quick_xml::Reader::from_str(&opml_content);

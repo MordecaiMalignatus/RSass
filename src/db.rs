@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, Error::SqliteFailure};
 
 use crate::{rss::Entry, utils};
 use std::error::Error;
@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS entries(
   content text,
   read integer,
   feed text,
-  guid blob,
+  guid blob unique,
   html_url text
 );
 "#,
@@ -62,8 +62,23 @@ pub fn insert_new_unread_entries(conn: &Connection, items: Vec<Entry>) -> () {
             entry.guid,
             entry.html_url,
         ]) {
-            Err(e) => eprintln!("Coulnd't insert entry into DB: {}\n{:#?}", e, entry),
-            Ok(_) => {},
+            Err(e) => {
+                match e {
+                    SqliteFailure(e, Some(description)) => {
+                        // Deduplication happens by running into the UNIQUE
+                        // constraint, so we filter this out here by explicit
+                        // check.
+                        if !(description == "UNIQUE constraint failed: entries.guid") {
+                            eprintln!(
+                                "Coulnd't insert entry into DB: SqliteFailure: {}\n{:#?}",
+                                e, entry
+                            )
+                        }
+                    }
+                    _ => eprintln!("Coulnd't insert entry into DB: {}\n{:#?}", e, entry),
+                }
+            }
+            Ok(_) => {}
         };
     });
 }
@@ -93,11 +108,13 @@ pub fn get_unread_entries(conn: &Connection) -> Result<Vec<Entry>, Box<dyn Error
 
 #[cfg(test)]
 mod test {
+    use std::{fs::remove_file, path::Path};
+
     use super::*;
 
     #[test]
     fn test_db_roundtrip() {
-        let conn = get_connection(PathBuf::from("./test.db"));
+        let conn = get_connection(PathBuf::from("./test_roundtrip.db"));
         let entry = Entry {
             html_url: String::from("some.url"),
             title: String::from("A Title to an Entry"),
@@ -109,8 +126,44 @@ mod test {
         let res = get_unread_entries(&conn).expect("Can't read unread entries");
         let res_entry = res.first().expect("No element found in unread entries");
 
-        std::fs::remove_file(std::path::Path::new("./test.db")).expect("Can't delete test-db");
-
+        remove_file(Path::new("./test_roundtrip.db")).expect("Can't delete test-db");
         assert_eq!(&entry, res_entry);
+    }
+
+    #[test]
+    fn test_read_unread() {
+        let conn = get_connection(PathBuf::from("./test_unread.db"));
+        let entry = Entry {
+            html_url: String::from("some.url"),
+            title: String::from("A Title to an Entry"),
+            content: String::from("Content for an entry!"),
+            feed: String::from("A Cool Blog"),
+            guid: String::from("some-cool-guid"),
+        };
+        insert_new_unread_entries(&conn, vec![entry.clone()]);
+        mark_entry_as_read(&conn, &entry.guid).expect("Marking entry as read failed");
+        let res: Vec<Entry> = get_unread_entries(&conn).expect("Can't retrieve unread stories");
+
+        remove_file(Path::new("./test_unread.db")).expect("Can't delete test-db");
+        assert!(res.is_empty());
+    }
+
+    #[test]
+    fn test_reinsert() {
+        let conn = get_connection(PathBuf::from("./test_reinsert.db"));
+        let entry = Entry {
+            html_url: String::from("some.url"),
+            title: String::from("A Title to an Entry"),
+            content: String::from("Content for an entry!"),
+            feed: String::from("A Cool Blog"),
+            guid: String::from("some-cool-guid"),
+        };
+        insert_new_unread_entries(&conn, vec![entry.clone()]);
+        insert_new_unread_entries(&conn, vec![entry.clone()]);
+        let res: Vec<Entry> = get_unread_entries(&conn).expect("Can't retrieve unread stories");
+
+        remove_file(Path::new("./test_reinsert.db")).expect("Can't delete test-db");
+        assert_eq!(res.len(), 1);
+        assert_eq!(res.first().unwrap(), &entry)
     }
 }

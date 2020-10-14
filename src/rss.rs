@@ -103,7 +103,7 @@ pub fn retrieve_new_entries() -> NewArticleCount {
     let unread_count = unread_entries.len() as NewArticleCount;
 
     let conn = db::get_db_connection();
-    db::insert_new_unread_entries(&conn, unread_entries);
+    db::insert_new_entries(&conn, unread_entries);
 
     unread_count
 }

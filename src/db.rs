@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS entries(
     )
 }
 
+/// Mark an entry as read. This sets the `read` field in the SQLite database,
+/// meaning it will not be selected by any future calls to `get_unread_entries`.
 pub fn mark_entry_as_read(conn: &Connection, guid: &String) -> Result<(), Box<dyn Error>> {
     let mut stmt = conn
         .prepare("update entries set read = 1 where guid = ?")
@@ -49,9 +51,13 @@ pub fn mark_entry_as_read(conn: &Connection, guid: &String) -> Result<(), Box<dy
     }
 }
 
-pub fn insert_new_unread_entries(conn: &Connection, items: Vec<Entry>) -> () {
+/// Inserts new entries into the database, deduplicating on the `guid` of each entry.
+pub fn insert_new_entries(conn: &Connection, items: Vec<Entry>) -> () {
     let mut stmt = conn
-        .prepare("insert into entries(title, content, read, feed, guid, html_url) values (?, ?, 0, ?, ?, ?)")
+        .prepare(
+            "insert into entries(title, content, read, feed, guid, html_url) \
+                  values (?, ?, 0, ?, ?, ?)",
+        )
         .expect("Can't prepare statement for inserting unread entries.");
 
     items.into_iter().for_each(|entry| {
@@ -83,6 +89,8 @@ pub fn insert_new_unread_entries(conn: &Connection, items: Vec<Entry>) -> () {
     });
 }
 
+/// Select unread entries from the database. This assumes all entries to be
+/// well-formed, and will panic if some of the are malformed in the DB.
 pub fn get_unread_entries(conn: &Connection) -> Result<Vec<Entry>, Box<dyn Error>> {
     let mut stmt = conn
         .prepare("SELECT title, content, feed, guid, html_url FROM entries WHERE read = 0;")
@@ -122,7 +130,7 @@ mod test {
             feed: String::from("A Cool Blog"),
             guid: String::from("some-cool-guid"),
         };
-        insert_new_unread_entries(&conn, vec![entry.clone()]);
+        insert_new_entries(&conn, vec![entry.clone()]);
         let res = get_unread_entries(&conn).expect("Can't read unread entries");
         let res_entry = res.first().expect("No element found in unread entries");
 
@@ -140,7 +148,7 @@ mod test {
             feed: String::from("A Cool Blog"),
             guid: String::from("some-cool-guid"),
         };
-        insert_new_unread_entries(&conn, vec![entry.clone()]);
+        insert_new_entries(&conn, vec![entry.clone()]);
         mark_entry_as_read(&conn, &entry.guid).expect("Marking entry as read failed");
         let res: Vec<Entry> = get_unread_entries(&conn).expect("Can't retrieve unread stories");
 
@@ -158,8 +166,8 @@ mod test {
             feed: String::from("A Cool Blog"),
             guid: String::from("some-cool-guid"),
         };
-        insert_new_unread_entries(&conn, vec![entry.clone()]);
-        insert_new_unread_entries(&conn, vec![entry.clone()]);
+        insert_new_entries(&conn, vec![entry.clone()]);
+        insert_new_entries(&conn, vec![entry.clone()]);
         let res: Vec<Entry> = get_unread_entries(&conn).expect("Can't retrieve unread stories");
 
         remove_file(Path::new("./test_reinsert.db")).expect("Can't delete test-db");
